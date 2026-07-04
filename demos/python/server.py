@@ -17,6 +17,6 @@ def get_sleep(ms: int):
 @app.get("/cpu/")
 def get_cpu(iterations: int):
     count = 0
-    for i in range(iterations):
+    for _ in range(iterations):
         count += 1
     return {"iterations": iterations, "count": count}
