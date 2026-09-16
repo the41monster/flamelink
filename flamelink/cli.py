@@ -11,6 +11,7 @@ def main():
     parser.add_argument("--url", type=str, help="Target URL to send requests to.")
     parser.add_argument("--rps", type=int, default=10, help="Requests per second.")
     parser.add_argument("--duration", type=int, default=10, help="Duration of the load test in seconds.")
+    parser.add_argument("--output", type=str, help="Output file to save the report.")
 
     args = parser.parse_args()
 
@@ -25,8 +26,13 @@ def main():
     report = build_report(url, rps, duration_s, response_times, error_count)
     report = json.dumps(report, indent=2)
 
-    print("Load test completed. Report:")
-    print(report)
+    print("Load test completed.")
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(report)
+        print(f"Report saved to {args.output}")
+    else:
+        print(f"Report: \n{report}")
 
 if __name__ == "__main__":
     main()
