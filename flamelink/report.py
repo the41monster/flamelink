@@ -2,7 +2,8 @@ from flamelink.load import calculate_percentiles
 from datetime import datetime, timezone
 
 
-def build_report(target_url: str, rps: int, duration_s: int, times: list[float], errors: int) -> dict:
+
+def build_report(target_url: str, rps: int, duration_s: int, times: list[float], errors: dict) -> dict:
     percentiles = calculate_percentiles(times)
     report = {
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),

@@ -2,23 +2,28 @@ import httpx
 import asyncio
 import time
 
-async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float], int]:
+async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float], dict]:
     semaphore = asyncio.Semaphore(rps)
     response_times = []
-    error_count = 0
+    error_dict = {}
     interval = 1 / rps
     async def make_request(client: httpx.AsyncClient):
         async with semaphore:
             start_time = time.perf_counter()
             try:
                 response = await client.get(url)
+                response.raise_for_status()
+                elapsed_time = (time.perf_counter() - start_time) * 1000
+                response_times.append(elapsed_time)
+            except httpx.TimeoutException:
+                error_dict["timeout"] = error_dict.get("timeout", 0) + 1
+            except httpx.ConnectError:
+                error_dict["connection_refused"] = error_dict.get("connection_refused", 0) + 1
+            except httpx.HTTPStatusError as e:
+                error_dict["http_error"] = error_dict.get("http_error", 0) + 1
             except httpx.RequestError as e:
-                print(f"Request failed: {type(e).__name__}: {e}")
-                nonlocal error_count
-                error_count += 1
-                return
-            elapsed_time = (time.perf_counter() - start_time) * 1000
-            response_times.append(elapsed_time)
+                error_dict["request_error"] = error_dict.get("request_error", 0) + 1
+            
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         tasks = []
@@ -34,7 +39,7 @@ async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float
         
         await asyncio.gather(*tasks)
     
-    return response_times, error_count
+    return response_times, error_dict
 
 def calculate_percentiles(times: list[float]) -> dict:
     if not times:
