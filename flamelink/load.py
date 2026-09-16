@@ -2,9 +2,10 @@ import httpx
 import asyncio
 import time
 
-async def generate_load(url: str, rps: int, duration_s: int) -> list[float]:
+async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float], int]:
     semaphore = asyncio.Semaphore(rps)
     response_times = []
+    error_count = 0
     interval = 1 / rps
     async def make_request(client: httpx.AsyncClient):
         async with semaphore:
@@ -12,7 +13,9 @@ async def generate_load(url: str, rps: int, duration_s: int) -> list[float]:
             try:
                 response = await client.get(url)
             except httpx.RequestError as e:
-                print(f"Request failed: {e}")
+                print(f"Request failed: {type(e).__name__}: {e}")
+                nonlocal error_count
+                error_count += 1
                 return
             elapsed_time = (time.perf_counter() - start_time) * 1000
             response_times.append(elapsed_time)
@@ -31,7 +34,7 @@ async def generate_load(url: str, rps: int, duration_s: int) -> list[float]:
         
         await asyncio.gather(*tasks)
     
-    return response_times
+    return response_times, error_count
 
 def calculate_percentiles(times: list[float]) -> dict:
     if not times:
