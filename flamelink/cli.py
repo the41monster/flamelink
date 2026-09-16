@@ -8,7 +8,7 @@ from flamelink.report import build_report
 
 def main():
     parser = argparse.ArgumentParser(description="Generate load on a target URL.")
-    parser.add_argument("--url", type=str, help="Target URL to send requests to.")
+    parser.add_argument("--url", type=str, required=True, help="Target URL to send requests to.")
     parser.add_argument("--rps", type=int, default=10, help="Requests per second.")
     parser.add_argument("--duration", type=int, default=10, help="Duration of the load test in seconds.")
     parser.add_argument("--output", type=str, help="Output file to save the report.")
@@ -28,9 +28,12 @@ def main():
 
     print("Load test completed.")
     if args.output:
-        with open(args.output, "w") as f:
-            f.write(report)
-        print(f"Report saved to {args.output}")
+        try:
+            with open(args.output, "w") as f:
+                f.write(report)
+            print(f"Report saved to {args.output}")
+        except Exception as e:
+            print(f"Error saving report to {args.output}: {e}")
     else:
         print(f"Report: \n{report}")
 

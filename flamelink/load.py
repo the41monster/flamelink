@@ -3,6 +3,10 @@ import asyncio
 import time
 
 async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float], dict]:
+    if rps <= 0:
+        raise ValueError("RPS must be greater than 0.")
+    if duration_s <= 0:
+        raise ValueError("Duration must be greater than 0.")
     semaphore = asyncio.Semaphore(rps)
     response_times = []
     error_dict = {}
