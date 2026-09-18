@@ -28,9 +28,15 @@ def record(pid: int, duration: int, output_path: str) -> str:
             "py-spy is not installed or not found in PATH. "
             "Please install py-spy and ensure it is available in your PATH."
         )
+    sudo_path = shutil.which("sudo")
+    if sudo_path is None:
+        raise ProfilerError(
+            "sudo is not installed or not found in PATH. "
+            "It is required to attach to processes via ptrace."
+        )
     
     cmd = [
-        "sudo", py_spy_path, "record",
+        sudo_path, py_spy_path, "record",
         "--output", output_path,
         "--pid", str(pid),
         "--duration", str(duration),

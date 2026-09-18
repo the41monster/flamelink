@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import sys
 
 from flamelink.load import generate_load
 from flamelink.report import build_report
@@ -44,6 +45,7 @@ def main():
                 print(f"Report saved to {output}")
             except Exception as e:
                 print(f"Error saving report to {output}: {e}")
+                sys.exit(1)
         else:
             print(f"Report: \n{report_json}")
     elif args.command == "profile" and args.target == "python":
@@ -57,8 +59,10 @@ def main():
             print(f"Profiling completed. Data saved to {out}")
         except ProfilerError as e:
             print(f"Error during profiling: {e}")
+            sys.exit(1)
         except Exception as e:
             print(f"Unexpected error during profiling: {e}")
+            sys.exit(1)
     else:
         parser.error(f"Unknown command: {args.command}")
 
