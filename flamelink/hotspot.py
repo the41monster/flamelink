@@ -1,6 +1,8 @@
 import re
 import xml.etree.ElementTree as ET
 
+from collections import defaultdict, Counter
+
 def parse_frames(svg_path: str) -> list[dict]:
     tree = ET.parse(svg_path)
     root = tree.getroot()
@@ -36,16 +38,11 @@ def parse_frames(svg_path: str) -> list[dict]:
 
 
 def rank_hotspots(frames: list[dict]) -> list[dict]:
-    levels = {}
+    levels = defaultdict(list)
     for frame in frames:
-        y = frame['y']
-        if y not in levels:
-            levels[y] = []
-        levels[y].append(frame)
+        levels[frame['y']].append(frame)
 
-    depth_ordering = []
-    for y in sorted(levels.keys()):
-        depth_ordering.append((y, levels[y]))
+    depth_ordering = sorted(levels.items())
 
     for _, level_frames in depth_ordering:
         level_frames.sort(key=lambda f: f['x'])
@@ -59,20 +56,20 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
             x1 = frame['x'] + frame['width']
             child_frames = []
             for child_frame in next_level_frames[last_index:]:
-                if (child_frame['x'] >= frame['x'] and
-                    child_frame['x'] + child_frame['width'] <= frame['x'] + frame['width']):
+                if (child_frame['x'] >= x0 and
+                    child_frame['x'] + child_frame['width'] <= x1):
                     child_frames.append(child_frame)
                     last_index += 1
                 else:
                     break
             frame['children'] = child_frames
 
-    self_times = {}
+    self_times = Counter()
     for frame in frames:
         self_time = frame['width']
         for child in frame.get('children', []):
             self_time -= child['width']
-        self_times[frame['name']] = self_times.get(frame['name'], 0) + self_time
+        self_times[frame['name']] += self_time
 
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
     sorted_frames = [{'name': name, 'self_time': self_time} for name, self_time in sorted_frames]

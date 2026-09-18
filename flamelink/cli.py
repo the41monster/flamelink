@@ -57,6 +57,10 @@ def main():
             print(f"Profiling completed. Data saved to {out}")
         except ProfilerError as e:
             print(f"Error during profiling: {e}")
+        except Exception as e:
+            print(f"Unexpected error during profiling: {e}")
+    else:
+        parser.error(f"Unknown command: {args.command}")
 
 if __name__ == "__main__":
     main()

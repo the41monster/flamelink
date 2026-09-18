@@ -22,7 +22,7 @@ def fastapi_server():
          "--workers", "1"
         ]
     )
-    deadline = time.time() + 10  # 10 seconds from now
+    deadline = time.monotonic() + 10  # 10 seconds from now
     while True:
         if proc.poll() is not None:
             raise RuntimeError(
