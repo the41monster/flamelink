@@ -29,3 +29,5 @@ load-node-100:
 load-node-200:
 	python3 -m flamelink.cli --url http://localhost:3000/sleep/?ms=100 --rps 200 --duration 10
 
+test-pyspy:
+	uv run pytest tests/test_pyspy_integration.py -v
