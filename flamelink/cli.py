@@ -7,6 +7,7 @@ from flamelink.load import generate_load
 from flamelink.report import build_report
 from flamelink.profilers.pyspy import record, ProfilerError
 from flamelink.profilers.clinicjs import record as record_clinicjs
+from flamelink.wsl import to_windows_path
 
 
 def main():
@@ -65,6 +66,9 @@ def main():
         try:
             record(pid, duration, out)
             print(f"Profiling completed. Data saved to {out}")
+            windows_path = to_windows_path(out)
+            if windows_path is not None:
+                print(f"Windows path: {windows_path}")
         except ProfilerError as e:
             print(f"Error during profiling: {e}")
             sys.exit(1)
@@ -81,6 +85,9 @@ def main():
         try:
             record_clinicjs(command=target_command, duration=duration, output_path=out, mode=mode)
             print(f"Profiling completed. Data saved to {out}")
+            windows_path = to_windows_path(out)
+            if windows_path is not None:
+                print(f"Windows path: {windows_path}")
         except ProfilerError as e:
             print(f"Error during profiling: {e}")
             sys.exit(1)
