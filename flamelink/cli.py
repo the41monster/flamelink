@@ -29,7 +29,7 @@ def main():
     python_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
 
     node_parser = profile_subparsers.add_parser("node", help="Profile a running Node.js process.")
-    node_parser.add_argument("--mode", type=str, choices=["flame"], default="flame", help="Profiling mode (default: flame).")
+    node_parser.add_argument("--mode", type=str, choices=["flame", "doctor"], default="flame", help="Profiling mode (default: flame).")
     node_parser.add_argument("--duration", type=int, default=10, help="Duration of the profiling in seconds.")
     node_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
     node_parser.add_argument("target_command", nargs="+", help="Command to run the Node.js application")

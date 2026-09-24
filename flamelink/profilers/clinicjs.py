@@ -15,7 +15,7 @@ def record(command, duration, output_path, mode="flame"):
             "Please install clinic.js and ensure it is available in your PATH."
         )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(prefix=".flamelink_clinic-", dir=os.getcwd()) as tmpdir:
         cmd = [
             clinicjs_path, mode,
             "--open=false",
@@ -32,16 +32,24 @@ def record(command, duration, output_path, mode="flame"):
             start_new_session=True
         )
 
+        killed = False
+        stdout = stderr = ""
         try:
-            proc.communicate(timeout=duration)
+            stdout, stderr = proc.communicate(timeout=duration)
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGINT)
             try:
-                proc.communicate(timeout=10)
+                stdout, stderr = proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
-                proc.communicate()
+                killed = True
+                stdout, stderr = proc.communicate()
 
-        shutil.move(os.path.join(tmpdir, "flamelink.clinic-flame.html"), output_path)
-
+        if os.path.exists(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html")):
+            shutil.move(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html"), output_path)
+        else:
+            raise ProfilerError(
+                f"Failed to generate clinic.js report. "
+                f"stdout: {stdout}, stderr: {stderr}, killed: {killed}"
+            )
         return output_path
