@@ -2,6 +2,8 @@ import re
 import shutil
 import subprocess
 
+from flamelink.profilers.errors import ProfilerError
+
 _PERM_DENIED_RE = re.compile(
     r"EPERM|EACCES|permission denied|Operation not permitted|Permission denied",
     re.IGNORECASE
@@ -11,9 +13,6 @@ _NON_PYTHON_RE = re.compile(
     re.IGNORECASE
 )
 
-
-class ProfilerError(Exception):
-    pass
 
 def is_permission_denied(result_stderr: str) -> bool:
     return bool(_PERM_DENIED_RE.search(result_stderr))

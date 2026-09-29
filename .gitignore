@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 tmp/
 *.egg-info/
+node_trace.*.log
+.flamelink_clinic-*/

@@ -1,4 +1,5 @@
 import re
+import json
 import xml.etree.ElementTree as ET
 
 from collections import defaultdict, Counter
@@ -73,4 +74,59 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
 
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
     sorted_frames = [{'name': name, 'self_time': self_time} for name, self_time in sorted_frames]
+    return sorted_frames
+
+
+def read_clinic_report(html_path: str) -> str:
+    with open(html_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return content
+
+
+def parse_clinic_report(html_path: str) -> dict:
+    content = read_clinic_report(html_path)
+    marker = '"merged":{'
+    idx = content.find(marker)
+    if idx == -1:
+        raise ValueError("Could not find the merged data in the clinic report.")
+
+    start_idx = idx + len(marker) - 1
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for i in range(start_idx, len(content)):
+        ch = content[i]
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return json.loads(content[start_idx:i + 1])
+
+    raise ValueError("Could not parse the merged data in the clinic report.")
+
+
+def rank_clinic_hotspots(root: dict) -> list[dict]:
+    self_times = Counter()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        self_times[(node["functionName"], node["fileName"], node["lineNumber"], node["category"], node["type"])] += node["onStackTop"]["base"]
+        stack.extend(node.get("children", []))
+    
+    sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
+    sorted_frames = [{'name': name, 'file': file, 'line': line, 'category': category, 'type': type, 'self_time': self_time} for (name, file, line, category, type), self_time in sorted_frames]
     return sorted_frames
