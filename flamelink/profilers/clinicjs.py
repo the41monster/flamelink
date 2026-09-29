@@ -53,7 +53,7 @@ def record(command, duration, output_path, mode="flame"):
             except ProcessLookupError:
                 pass
             try:
-                stdout, stderr = proc.communicate(timeout=10)
+                stdout, stderr = proc.communicate(timeout=30)
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
@@ -71,6 +71,12 @@ def record(command, duration, output_path, mode="flame"):
         
         if os.path.exists(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html")):
             shutil.move(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html"), output_path)
+            with open(output_path, 'r', encoding='utf-8') as f:
+                if not f.read().strip().endswith("-->"):
+                    raise ProfilerError(
+                        f"Clinic.js report at {output_path} appears to be incomplete (truncated write?). "
+                        f"killed: {killed}"
+                    )
         else:
             raise ProfilerError(
                 f"Failed to generate clinic.js report. "
