@@ -27,65 +27,72 @@ def record(command, duration, output_path, mode="flame"):
 
     
     with tempfile.TemporaryDirectory(prefix=".flamelink_clinic-", dir=os.getcwd()) as tmpdir:
-        cmd = [
-            clinicjs_path, mode,
-            "--open=false",
-            "--dest", tmpdir,
-            "--name", "flamelink",
-            "--", *command
-        ]
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True
-        )
-
-        killed = False
-        stdout = stderr = ""
         try:
-            stdout, stderr = proc.communicate(timeout=duration)
-        except subprocess.TimeoutExpired:
+            cmd = [
+                clinicjs_path, mode,
+                "--open=false",
+                "--dest", tmpdir,
+                "--name", "flamelink",
+                "--", *command
+            ]
+
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True
+            )
+
+            killed = False
+            stdout = stderr = ""
             try:
-                os.killpg(proc.pid, signal.SIGINT)
-            except ProcessLookupError:
-                pass
-            try:
-                stdout, stderr = proc.communicate(timeout=30)
+                stdout, stderr = proc.communicate(timeout=duration)
             except subprocess.TimeoutExpired:
                 try:
-                    os.killpg(proc.pid, signal.SIGKILL)
+                    os.killpg(proc.pid, signal.SIGINT)
                 except ProcessLookupError:
                     pass
-                killed = True
-                stdout, stderr = proc.communicate()
+                try:
+                    stdout, stderr = proc.communicate(timeout=30)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    killed = True
+                    stdout, stderr = proc.communicate()
 
-        match = re.search(r"Target subprocess error, code: (\d+)", stdout + stderr)
-        if not match:
-            match = re.search(r"process exited with exit code (\d+)", stdout + stderr)
-        if match and match.group(1) != "0":
-            raise ProfilerError(
-                f"Target subprocess exited early with a code: {match.group(1)}.\n{stderr}" 
-            )
-        
-        if os.path.exists(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html")):
-            shutil.move(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html"), output_path)
-            with open(output_path, 'rb') as f:
-                f.seek(0, os.SEEK_END)
-                size = f.tell()
-                f.seek(max(size - 256, 0), os.SEEK_SET)
-                tail = f.read().decode('utf-8', errors='ignore')
-            if not tail.strip().endswith("-->"):
+            match = re.search(r"Target subprocess error, code: (\d+)", stdout + stderr)
+            if not match:
+                match = re.search(r"process exited with exit code (\d+)", stdout + stderr)
+            if match and match.group(1) != "0":
                 raise ProfilerError(
-                    f"Clinic.js report at {output_path} appears to be incomplete (truncated write?). "
-                    f"killed: {killed}"
+                    f"Target subprocess exited early with a code: {match.group(1)}.\n{stderr}" 
                 )
-        else:
-            raise ProfilerError(
-                f"Failed to generate clinic.js report. "
-                f"stdout: {stdout}, stderr: {stderr}, killed: {killed}"
-            )
-  
+            
+            if os.path.exists(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html")):
+                shutil.move(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html"), output_path)
+                with open(output_path, 'rb') as f:
+                    f.seek(0, os.SEEK_END)
+                    size = f.tell()
+                    f.seek(max(size - 256, 0), os.SEEK_SET)
+                    tail = f.read().decode('utf-8', errors='ignore')
+                if not tail.strip().endswith("-->"):
+                    raise ProfilerError(
+                        f"Clinic.js report at {output_path} appears to be incomplete (truncated write?). "
+                        f"killed: {killed}"
+                    )
+            else:
+                raise ProfilerError(
+                    f"Failed to generate clinic.js report. "
+                    f"stdout: {stdout}, stderr: {stderr}, killed: {killed}"
+                )
+        finally:
+            if mode == "doctor":
+                for leftover in glob.glob(os.path.join(os.getcwd(), "node_trace.*.log")):
+                    try:
+                        os.remove(leftover)
+                    except Exception as e:
+                        print(f"Warning: Failed to remove leftover file {leftover}: {e}")
     return output_path
