@@ -3,12 +3,35 @@ import signal
 import pytest
 import shutil
 import subprocess
+from pathlib import Path
 
 from flamelink.profilers.clinicjs import record
 from flamelink.profilers.errors import ProfilerError
 
 
 VALID_HTML = '<html></html>\n<!-- {"tool":"flame","toolVersion":"13.0.0","hash":"abc123"} -->\n'
+
+
+def make_fake_popen(stdout="", stderr="", html=None, timeouts=0, trace_log=False):
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            self.calls = 0
+            self.pid = 999999
+            if trace_log:
+                trace_file = Path(os.path.join(os.getcwd(), "node_trace.1.log"))
+                trace_file.touch()
+            if html is not None:
+                dest = cmd[cmd.index("--dest") + 1]
+                mode = cmd[1]
+                with open(os.path.join(dest, f"flamelink.clinic-{mode}.html"), "w") as f:
+                    f.write(html)
+
+        def communicate(self, timeout=None):
+            self.calls += 1
+            if self.calls <= timeouts and timeout is not None:
+                raise subprocess.TimeoutExpired(cmd="clinic", timeout=timeout)
+            return stdout, stderr
+    return FakePopen
 
 
 def test_clinic_not_installed(monkeypatch):
@@ -27,25 +50,6 @@ def test_doctor_stale_trace_logs(monkeypatch, tmp_path):
         record(command=["node", "app.js"], duration=1, output_path="output", mode="doctor")
 
     assert trace_file.exists()
-
-
-def make_fake_popen(stdout="", stderr="", html=None, timeouts=0):
-    class FakePopen:
-        def __init__(self, cmd, **kwargs):
-            self.calls = 0
-            self.pid = 999999
-            if html is not None:
-                dest = cmd[cmd.index("--dest") + 1]
-                mode = cmd[1]
-                with open(os.path.join(dest, f"flamelink.clinic-{mode}.html"), "w") as f:
-                    f.write(html)
-
-        def communicate(self, timeout=None):
-            self.calls += 1
-            if self.calls <= timeouts and timeout is not None:
-                raise subprocess.TimeoutExpired(cmd="clinic", timeout=timeout)
-            return stdout, stderr
-    return FakePopen
 
 
 def test_flame_target_exits_early(monkeypatch, tmp_path):
@@ -141,3 +145,33 @@ def test_timeout_escalates_to_sigkill(monkeypatch, tmp_path):
         record(command=["node", "app.js"], duration=1, output_path=output_path)
     
     assert signals == [(999999, signal.SIGINT), (999999, signal.SIGKILL)], "SIGINT and SIGKILL should be sent on repeated timeouts"
+
+
+def test_doctor_cleans_trace_log_on_success(monkeypatch, tmp_path):
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "Popen", make_fake_popen(html=VALID_HTML, trace_log=True))
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: None)
+    monkeypatch.chdir(tmp_path)
+
+    output_path = tmp_path / "output"
+    result = record(command=["node", "app.js"], duration=1, output_path=output_path, mode="doctor")
+
+    trace_file = tmp_path / "node_trace.1.log"
+
+    assert result == output_path, "record() should return the output path"
+    assert not trace_file.exists(), "Trace log should be cleaned up after successful doctor run"
+
+
+def test_doctor_cleans_trace_log_on_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "Popen", make_fake_popen(stderr="process exited with exit code 1", trace_log=True))
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: None)
+    monkeypatch.chdir(tmp_path)
+
+    output_path = tmp_path / "output"
+    with pytest.raises(ProfilerError, match="exited early"):
+        record(command=["node", "app.js"], duration=1, output_path=output_path, mode="doctor")
+
+    trace_file = tmp_path / "node_trace.1.log"
+
+    assert not trace_file.exists(), "Trace log should be cleaned up even after failed doctor run"
