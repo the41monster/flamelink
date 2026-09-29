@@ -5,7 +5,8 @@ import sys
 
 from flamelink.load import generate_load
 from flamelink.report import build_report
-from flamelink.profilers.pyspy import record, ProfilerError
+from flamelink.profilers.errors import ProfilerError
+from flamelink.profilers.pyspy import record as record_pyspy
 from flamelink.profilers.clinicjs import record as record_clinicjs
 from flamelink.wsl import to_windows_path
 
@@ -64,7 +65,7 @@ def main():
 
         print(f"Profiling Python process with PID {pid} for {duration} seconds...")
         try:
-            record(pid, duration, out)
+            record_pyspy(pid, duration, out)
             print(f"Profiling completed. Data saved to {out}")
             windows_path = to_windows_path(out)
             if windows_path is not None:

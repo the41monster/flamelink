@@ -6,7 +6,7 @@ import tempfile
 import glob
 import re
 
-from flamelink.profilers.pyspy import ProfilerError
+from flamelink.profilers.errors import ProfilerError
 
 
 def record(command, duration, output_path, mode="flame"):
