@@ -63,8 +63,9 @@ def record(command, duration, output_path, mode="flame"):
                 stdout, stderr = proc.communicate()
 
         match = re.search(r"Target subprocess error, code: (\d+)", stdout + stderr)
+        if not match:
+            match = re.search(r"process exited with exit code (\d+)", stdout + stderr)
         if match and match.group(1) != "0":
-            killed = False
             raise ProfilerError(
                 f"Target subprocess exited early with a code: {match.group(1)}.\n{stderr}" 
             )
