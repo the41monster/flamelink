@@ -48,18 +48,25 @@ def record(command, duration, output_path, mode="flame"):
         try:
             stdout, stderr = proc.communicate(timeout=duration)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGINT)
+            try:
+                os.killpg(proc.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
             try:
                 stdout, stderr = proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 killed = True
                 stdout, stderr = proc.communicate()
 
-        if re.search(r"Target subprocess error, code: (\d+)", stdout + stderr):
+        match = re.search(r"Target subprocess error, code: (\d+)", stdout + stderr)
+        if match and match.group(1) != "0":
+            killed = False
             raise ProfilerError(
-                f"Target subprocess exited early with an error. "
-                f"stdout: {stdout}, stderr: {stderr}"
+                f"Target subprocess exited early with a code: {match.group(1)}.\n{stderr}" 
             )
         
         if os.path.exists(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html")):
