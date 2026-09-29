@@ -93,7 +93,7 @@ def main():
             print(f"Error during profiling: {e}")
             sys.exit(1)
         except Exception as e:
-            print(f"Error during profiling: {e}")
+            print(f"Unexpected error during profiling: {e}")
             sys.exit(1)
     else:
         parser.error(f"Unknown command: {args.command} {getattr(args, 'target', '')}".strip())
