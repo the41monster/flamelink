@@ -72,12 +72,16 @@ def record(command, duration, output_path, mode="flame"):
         
         if os.path.exists(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html")):
             shutil.move(os.path.join(tmpdir, f"flamelink.clinic-{mode}.html"), output_path)
-            with open(output_path, 'r', encoding='utf-8') as f:
-                if not f.read().strip().endswith("-->"):
-                    raise ProfilerError(
-                        f"Clinic.js report at {output_path} appears to be incomplete (truncated write?). "
-                        f"killed: {killed}"
-                    )
+            with open(output_path, 'rb') as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(size - 256, 0), os.SEEK_SET)
+                tail = f.read().decode('utf-8', errors='ignore')
+            if not tail.strip().endswith("-->"):
+                raise ProfilerError(
+                    f"Clinic.js report at {output_path} appears to be incomplete (truncated write?). "
+                    f"killed: {killed}"
+                )
         else:
             raise ProfilerError(
                 f"Failed to generate clinic.js report. "
