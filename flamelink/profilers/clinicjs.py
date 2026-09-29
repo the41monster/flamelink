@@ -79,6 +79,7 @@ def record(command, duration, output_path, mode="flame"):
                     f.seek(max(size - 256, 0), os.SEEK_SET)
                     tail = f.read().decode('utf-8', errors='ignore')
                 if not tail.strip().endswith("-->"):
+                    os.remove(output_path)
                     raise ProfilerError(
                         f"Clinic.js report at {output_path} appears to be incomplete (truncated write?). "
                         f"killed: {killed}"
