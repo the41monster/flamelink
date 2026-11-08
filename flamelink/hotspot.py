@@ -88,15 +88,40 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
             orphan = next_level_frames[last_index]
             raise ValueError(f"Frame {orphan['name']!r} at x={orphan['x']} has no parent frame")
 
+    if not depth_ordering:
+        return []
+
     self_times = Counter()
-    for frame in frames:
-        self_time = frame['width']
-        for child in frame.get('children', []):
-            self_time -= child['width']
-        self_times[(frame['name'], frame['file'], frame['line'])] += self_time
+    total_times = Counter()
+
+    roots = depth_ordering[0][1]
+    stack = [(root, frozenset()) for root in roots]
+
+    while stack:
+        frame, keys_above = stack.pop()
+        key = (frame['name'], frame['file'], frame['line'])
+        children = frame.get('children', [])
+
+        self_times[key] += frame['width'] - sum(child['width'] for child in children)
+
+        if key not in keys_above:
+            total_times[key] += frame['width']
+
+        child_keys_above = keys_above | {key}
+        for child in children:
+            stack.append((child, child_keys_above))
 
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
-    sorted_frames = [{'name': name, 'file': file, 'line': line, 'self_time': self_time} for (name, file, line), self_time in sorted_frames]
+    sorted_frames = [
+        {
+            'name': name,
+            'file': file,
+            'line': line,
+            'self_time': self_time,
+            'total_time': total_times[(name, file, line)]
+        }
+        for (name, file, line), self_time in sorted_frames
+    ]
     return sorted_frames
 
 
