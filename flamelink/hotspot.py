@@ -84,6 +84,9 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
                 else:
                     break
             frame['children'] = child_frames
+        if last_index != len(next_level_frames):
+            orphan = next_level_frames[last_index]
+            raise ValueError(f"Frame {orphan['name']!r} at x={orphan['x']} has no parent frame")
 
     self_times = Counter()
     for frame in frames:
