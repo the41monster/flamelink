@@ -93,10 +93,10 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
         self_time = frame['width']
         for child in frame.get('children', []):
             self_time -= child['width']
-        self_times[frame['name']] += self_time
+        self_times[(frame['name'], frame['file'], frame['line'])] += self_time
 
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
-    sorted_frames = [{'name': name, 'self_time': self_time} for name, self_time in sorted_frames]
+    sorted_frames = [{'name': name, 'file': file, 'line': line, 'self_time': self_time} for (name, file, line), self_time in sorted_frames]
     return sorted_frames
 
 
