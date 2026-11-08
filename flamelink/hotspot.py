@@ -4,6 +4,12 @@ import xml.etree.ElementTree as ET
 
 from collections import defaultdict, Counter
 
+# inferno's flamegraph attributes (fg:x, fg:w) live in this namespace
+FG_NS = '{http://github.com/jonhoo/inferno}'
+FG_X = f"{FG_NS}x"
+FG_W = f"{FG_NS}w"
+
+
 def parse_frames(svg_path: str) -> list[dict]:
     tree = ET.parse(svg_path)
     root = tree.getroot()
@@ -22,10 +28,16 @@ def parse_frames(svg_path: str) -> list[dict]:
 
         if title_el is None or rect_el is None or not title_el.text:
             continue
+        fg_w = rect_el.get(FG_W)
+        if fg_w is None:
+            continue
 
         name = title_el.text.split('(', 1)[0].strip()
-        x = float(rect_el.get('x', '0').rstrip('%'))
-        width = float(rect_el.get('width', '0').rstrip('%'))
+        fg_x = rect_el.get(FG_X)
+        if fg_x is None:
+            raise ValueError(f"Frame {name!r} has fg:w but no fg:x; the SVG is malformed")
+        x = int(fg_x)
+        width = int(fg_w)
         y = float(rect_el.get('y', '0').rstrip('%'))
 
         frames.append({
