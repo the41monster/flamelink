@@ -8,6 +8,7 @@ from collections import defaultdict, Counter
 FG_NS = '{http://github.com/jonhoo/inferno}'
 FG_X = f"{FG_NS}x"
 FG_W = f"{FG_NS}w"
+TITLE_RE = re.compile(r'^(?P<fn>.*?)(?: \((?P<file>.*):(?P<line>\d+)\))? \((?P<samples>[\d,]+) samples?, [\d.]+%\)$')
 
 
 def parse_frames(svg_path: str) -> list[dict]:
@@ -32,7 +33,12 @@ def parse_frames(svg_path: str) -> list[dict]:
         if fg_w is None:
             continue
 
-        name = title_el.text.split('(', 1)[0].strip()
+        m = TITLE_RE.match(title_el.text)
+        if m is None:
+            raise ValueError(f"Unrecognized py-spy frame title: {title_el.text!r}")
+        name = m.group('fn')
+        file = m.group('file')
+        line = int(m.group('line')) if m.group('line') else None
         fg_x = rect_el.get(FG_X)
         if fg_x is None:
             raise ValueError(f"Frame {name!r} has fg:w but no fg:x; the SVG is malformed")
@@ -42,6 +48,8 @@ def parse_frames(svg_path: str) -> list[dict]:
 
         frames.append({
             'name': name,
+            'file': file,
+            'line': line,
             'x': x,
             'width': width,
             'y': y
