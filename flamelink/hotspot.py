@@ -125,6 +125,36 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
     return sorted_frames
 
 
+def pyspy_hotspots(svg_path: str) -> list[dict]:
+    frames = parse_frames(svg_path)
+    rows = rank_hotspots(frames)
+    root_row = next(
+        (row for row in rows if row['name'] == 'all' and row['file'] is None),
+        None,
+    )
+
+    if root_row is None:
+        raise ValueError(f"{svg_path!r} does not contain a root 'all' frame; can't compute percentages")
+
+    samples = root_row['total_time']
+    if samples == 0:
+        raise ValueError(f"{svg_path!r} has 0 samples in its 'all' root frame")
+
+    hotspot_rows = []
+    for row in rows:
+        if row is root_row:
+            continue
+        hotspot_rows.append({
+            'fn': row['name'],
+            'file': row['file'],
+            'line': row['line'],
+            'self_pct': round(100 * row['self_time'] / samples, 2),
+            'total_pct': round(100 * row['total_time'] / samples, 2)
+        })
+
+    return hotspot_rows
+
+
 def read_clinic_report(html_path: str) -> str:
     with open(html_path, 'r', encoding='utf-8') as f:
         content = f.read()
