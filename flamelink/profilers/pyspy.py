@@ -36,6 +36,7 @@ def record(pid: int, duration: int, output_path: str) -> str:
     
     cmd = [
         sudo_path, py_spy_path, "record",
+        "--function",
         "--output", output_path,
         "--pid", str(pid),
         "--duration", str(duration),
