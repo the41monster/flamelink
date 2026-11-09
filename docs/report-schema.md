@@ -163,4 +163,4 @@ A 30-second clinic run against the Express demo. It includes both kinds of nativ
 - `self_pct` values sum to about 100 across all hotspots, or less if the list is ever capped.
 - `total_pct` is always greater than or equal to `self_pct`. `total_pct` values don't sum to anything meaningful, because one sample counts toward every function on its stack.
 - Hotspots are sorted by `self_pct`, highest first.
-- A hotspot is identified by `(fn, file, line)`. Two hotspots in the same report never share all three.
+- A hotspot is identified by `(fn, file, line)`. Two hotspots in the same report never share all three. Functions that share a name and start on the same line, such as two anonymous arrow functions on one line, can't be told apart and are merged into one row.
