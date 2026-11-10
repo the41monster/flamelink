@@ -19,9 +19,28 @@ PYSPY_SVG = """\
     <g><title>main (app.py:1) (10 samples, 100.00%)</title><rect x="0%" y="16" width="100%" fg:x="0" fg:w="10"/></g>
     <g><title>fib (app.py:5) (8 samples, 80.00%)</title><rect x="0%" y="32" width="80%" fg:x="0" fg:w="8"/></g>
     <g><title>fib (app.py:5) (6 samples, 60.00%)</title><rect x="0%" y="48" width="60%" fg:x="0" fg:w="6"/></g>
-    <g><title>idle (app.py:9) (2 samples, 20.00%)</title><rect x="0%" y="32" width="20%" fg:x="8" fg:w="2"/></g>
+    <g><title>idle (app.py:9) (2 samples, 20.00%)</title><rect x="80%" y="32" width="20%" fg:x="8" fg:w="2"/></g>
 </svg>
 """
+
+# Same tree, but idle's x percentage is off by 0.0001, as py-spy's 4-decimal rounding can produce.
+# By percentages idle ends at 100.0001%, past main's right edge, so a percentage-based parser
+# would find no parent for it. The fg:x/fg:w sample counts are still exact.
+PYSPY_SVG_ROUNDED = """\
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:fg="http://github.com/jonhoo/inferno">
+    <g><title>all (10 samples, 100%)</title><rect x="0%" y="0" width="100%" fg:x="0" fg:w="10"/></g>
+    <g><title>main (app.py:1) (10 samples, 100.00%)</title><rect x="0%" y="16" width="100%" fg:x="0" fg:w="10"/></g>
+    <g><title>fib (app.py:5) (8 samples, 80.00%)</title><rect x="0%" y="32" width="80%" fg:x="0" fg:w="8"/></g>
+    <g><title>fib (app.py:5) (6 samples, 60.00%)</title><rect x="0%" y="48" width="60%" fg:x="0" fg:w="6"/></g>
+    <g><title>idle (app.py:9) (2 samples, 20.00%)</title><rect x="80.0001%" y="32" width="20%" fg:x="8" fg:w="2"/></g>
+</svg>
+"""
+
+PYSPY_EXPECTED = [
+    {"fn": "fib",  "file": "app.py", "line": 5, "self_pct": 80.0, "total_pct": 80.0},
+    {"fn": "idle", "file": "app.py", "line": 9, "self_pct": 20.0, "total_pct": 20.0},
+    {"fn": "main", "file": "app.py", "line": 1, "self_pct": 0.0,  "total_pct": 100.0},
+]
 
 # 10 samples: root -> (anonymous) -> {fib -> fib (recursive), [SHARED_LIB] -> syscall}
 # Every node satisfies value == onStackTop.base + sum(children values), like real clinic data
@@ -105,11 +124,17 @@ def test_pyspy_hotspots_small_tree(tmp_path):
     svg_path.write_text(PYSPY_SVG)
 
     hotspots = pyspy_hotspots(str(svg_path))
-    assert hotspots == [
-        {"fn": "fib",  "file": "app.py", "line": 5, "self_pct": 80.0, "total_pct": 80.0},
-        {"fn": "idle", "file": "app.py", "line": 9, "self_pct": 20.0, "total_pct": 20.0},
-        {"fn": "main", "file": "app.py", "line": 1, "self_pct": 0.0,  "total_pct": 100.0},
-    ]
+    assert hotspots == PYSPY_EXPECTED
+    validate_hotspots(hotspots)
+
+
+def test_pyspy_hotspots_ignore_rounded_percentages(tmp_path):
+    # Regression: parsing x/width percentages made self time sum to 591% on a real profile.
+    svg_path = tmp_path / "profile.svg"
+    svg_path.write_text(PYSPY_SVG_ROUNDED)
+
+    hotspots = pyspy_hotspots(str(svg_path))
+    assert hotspots == PYSPY_EXPECTED
     validate_hotspots(hotspots)
 
 
