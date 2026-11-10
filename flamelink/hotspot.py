@@ -199,12 +199,45 @@ def parse_clinic_report(html_path: str) -> dict:
 
 def rank_clinic_hotspots(root: dict) -> list[dict]:
     self_times = Counter()
-    stack = [root]
+    total_times = Counter()
+    # The root is a container, not a function, so the walk starts at its children
+    stack = [(child, frozenset()) for child in root.get("children", [])]
     while stack:
-        node = stack.pop()
-        self_times[(node["functionName"], node["fileName"], node["lineNumber"], node["category"], node["type"])] += node["onStackTop"]["base"]
-        stack.extend(node.get("children", []))
+        node, keys_above = stack.pop()
+        key = (node["functionName"], node["fileName"], node["lineNumber"])
+        children = node.get("children", [])
+        self_times[key] += node["onStackTop"]["base"]
+        if key not in keys_above:
+            total_times[key] += node["value"]
+        stack.extend([(child, keys_above | {key}) for child in children])
     
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
-    sorted_frames = [{'name': name, 'file': file, 'line': line, 'category': category, 'type': type, 'self_time': self_time} for (name, file, line, category, type), self_time in sorted_frames]
+    sorted_frames = [
+        {
+            'name': name,
+            'file': file,
+            'line': line,
+            'self_time': self_time,
+            'total_time': total_times[(name, file, line)]
+        } for (name, file, line), self_time in sorted_frames]
     return sorted_frames
+
+
+def clinic_hotspots(html_path: str) -> list[dict]:
+    root = parse_clinic_report(html_path)
+    rows = rank_clinic_hotspots(root)
+    samples = root["value"]
+    if samples == 0:
+        raise ValueError(f"{html_path!r} has 0 samples in its root frame")
+
+    hotspot_rows = []
+    for row in rows:
+        hotspot_rows.append({
+            'fn': row['name'],
+            'file': row['file'],
+            'line': row['line'],
+            'self_pct': round(100 * row['self_time'] / samples, 2),
+            'total_pct': round(100 * row['total_time'] / samples, 2),
+        })
+
+    return hotspot_rows

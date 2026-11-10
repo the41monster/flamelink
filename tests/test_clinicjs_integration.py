@@ -57,7 +57,7 @@ async def test_clinicjs_captures_load(tmp_path):
     ranked_hotspots = rank_clinic_hotspots(clinic_hotspots)
     contains = False
     for hotspot in ranked_hotspots:
-        if "fib" in hotspot["name"] and hotspot["category"] == "app":
+        if hotspot["name"] == "fib" and hotspot["file"] == "./utils.js":
             contains = True
             break
     assert contains, "Ranked hotspots do not contain the expected 'fib' function"
