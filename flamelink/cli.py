@@ -45,9 +45,10 @@ def main():
 
         print(f"Generating load on {url} with {rps} RPS for {duration_s} seconds...")
         response_times, error_count = asyncio.run(generate_load(url, rps, duration_s))
-        report = build_report(url, rps, duration_s, response_times, error_count)
+        report = build_report(url, duration_s, response_times)
         report_json = json.dumps(report, indent=2)
         print("Load test completed.")
+        print(f"Errors: {error_count}")
         if output:
             try:
                 with open(output, "w") as f:
