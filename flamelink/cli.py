@@ -37,8 +37,9 @@ def main():
     node_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
     node_parser.add_argument("target_command", nargs="+", metavar="-- COMMAND", help="Command to run, e.g. -- node app.js. Use -- to separate the command from the CLI arguments.")
 
-    report_parser = subparsers.add_parser("report", help="Pretty-print a report file.")
+    report_parser = subparsers.add_parser("report", help="Show a report file as a table or JSON.")
     report_parser.add_argument("path", type=str, help="Path to the report file (JSON).")
+    report_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output style: a table for the console or JSON for machine consumption (default: table).")
 
     args = parser.parse_args()
 
@@ -105,9 +106,12 @@ def main():
         try:
             report = load_report(args.path)
         except ReportError as e:
-            print(f"Error loading report: {e}")
+            print(f"Error loading report: {e}", file=sys.stderr)
             sys.exit(1)
-        render_report(report, Console())
+        if args.format == "json":
+            print(json.dumps(report, indent=2))
+        else:
+            render_report(report, Console())
     else:
         parser.error(f"Unknown command: {args.command} {getattr(args, 'target', '')}".strip())
 
