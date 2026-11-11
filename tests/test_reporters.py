@@ -1,14 +1,11 @@
 import json
-import importlib.resources
+
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
 
 from flamelink.hotspot import pyspy_hotspots, clinic_hotspots
-from flamelink.report import build_report
+from flamelink.report import build_report, load_report, ReportError, SCHEMA
 
-SCHEMA = json.loads(
-    (importlib.resources.files("flamelink") / "schemas" / "report.schema.json").read_text(encoding="utf-8")
-)
 # format_checker makes "format": "date-time" on timestamp an actual check (needs rfc3339-validator)
 REPORT_VALIDATOR = Draft202012Validator(SCHEMA, format_checker=Draft202012Validator.FORMAT_CHECKER)
 
@@ -208,3 +205,49 @@ def test_build_report_rejects_bad_timestamp():
     with pytest.raises(ValidationError) as exc_info:
         validate_report(report)
     assert exc_info.value.validator == "format"
+
+
+def test_load_report_returns_valid_report(tmp_path):
+    report = build_report(
+        target="http://localhost:8000/fib",
+        duration_s=10,
+        times=[10.0, 20.0, 30.0],
+        sampler="py-spy",
+        hotspots=PYSPY_EXPECTED,
+    )
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report))
+
+    assert load_report(str(path)) == report
+
+
+def test_load_report_missing_file(tmp_path):
+    with pytest.raises(ReportError, match="Cannot read"):
+        load_report(str(tmp_path / "missing.json"))
+
+
+def test_load_report_not_json(tmp_path):
+    path = tmp_path / "report.json"
+    path.write_text("{not json")
+
+    with pytest.raises(ReportError, match="Invalid JSON"):
+        load_report(str(path))
+
+
+def test_load_report_rejects_feature2_report(tmp_path):
+    # The old load-report shape: target_url instead of target, no sampler or hotspots
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps({
+        "timestamp": "2026-09-16T12:00:00+00:00",
+        "target_url": "http://localhost:8000/fib",
+        "rps": 10,
+        "duration_s": 10,
+        "p50_ms": 20.0,
+        "p95_ms": 30.0,
+        "p99_ms": 30.0,
+        "sample_count": 3,
+        "errors": {},
+    }))
+
+    with pytest.raises(ReportError, match="not a valid flamelink report"):
+        load_report(str(path))
