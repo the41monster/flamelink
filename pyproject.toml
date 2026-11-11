@@ -22,4 +22,5 @@ dev = [
     "jsonschema>=4.26.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "rfc3339-validator>=0.1.4",
 ]

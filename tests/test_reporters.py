@@ -4,10 +4,13 @@ import pytest
 from jsonschema import Draft202012Validator, ValidationError
 
 from flamelink.hotspot import pyspy_hotspots, clinic_hotspots
+from flamelink.report import build_report
 
 SCHEMA = json.loads(
     (importlib.resources.files("flamelink") / "schemas" / "report.schema.json").read_text(encoding="utf-8")
 )
+# format_checker makes "format": "date-time" on timestamp an actual check (needs rfc3339-validator)
+REPORT_VALIDATOR = Draft202012Validator(SCHEMA, format_checker=Draft202012Validator.FORMAT_CHECKER)
 
 HOTSPOTS_SCHEMA = {**SCHEMA["properties"]["hotspots"], "$defs": SCHEMA["$defs"]}
 HOTSPOTS_VALIDATOR = Draft202012Validator(HOTSPOTS_SCHEMA)
@@ -63,6 +66,10 @@ CLINIC_HTML = """\
   ]
 }}</script></html>
 """
+
+
+def validate_report(report):
+    REPORT_VALIDATOR.validate(report)  # Raises ValidationError if invalid
 
 
 def validate_hotspots(rows):
@@ -150,3 +157,54 @@ def test_clinic_hotspots_small_tree(tmp_path):
         {"fn": "(anonymous)", "file": "./server.js", "line": 7, "self_pct": 0.0, "total_pct": 100.0},
     ]
     validate_hotspots(hotspots)
+
+
+def test_build_report_load_only():
+    report = build_report(
+        target="http://localhost:8000/fib",
+        duration_s=10,
+        times=[10.0, 20.0, 30.0]
+    )
+    validate_report(report)
+    assert report["sampler"] is None
+    assert report["hotspots"] == []
+    assert report["p50_ms"] == 20.0
+    assert report["p95_ms"] == 30.0
+    assert report["p99_ms"] == 30.0
+
+
+def test_build_report_no_successful_requests():
+    report = build_report(
+        target="http://localhost:8000/fib",
+        duration_s=10,
+        times=[]
+    )
+    validate_report(report)
+    assert report["p50_ms"] is None
+    assert report["p95_ms"] is None
+    assert report["p99_ms"] is None
+
+
+def test_build_report_with_pyspy_hotspots():
+    report = build_report(
+        target="http://localhost:8000/fib",
+        duration_s=10,
+        times=[10.0, 20.0, 30.0],
+        sampler="py-spy",
+        hotspots=PYSPY_EXPECTED
+    )
+    validate_report(report)
+    assert report["sampler"] == "py-spy"
+    assert report["hotspots"] == PYSPY_EXPECTED
+
+
+def test_build_report_rejects_bad_timestamp():
+    report = build_report(
+        target="http://localhost:8000/fib",
+        duration_s=10,
+        times=[10.0, 20.0, 30.0]
+    )
+    report["timestamp"] = "not a timestamp"
+    with pytest.raises(ValidationError) as exc_info:
+        validate_report(report)
+    assert exc_info.value.validator == "format"
