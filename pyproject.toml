@@ -12,6 +12,9 @@ dependencies = [
     "uvicorn",
 ]
 
+[project.scripts]
+flamelink = "flamelink.cli:main"
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"

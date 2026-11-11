@@ -2,12 +2,14 @@ import argparse
 import asyncio
 import json
 import sys
+from rich.console import Console
 
+from flamelink.display import render_report
 from flamelink.load import generate_load
-from flamelink.report import build_report
 from flamelink.profilers.errors import ProfilerError
 from flamelink.profilers.pyspy import record as record_pyspy
 from flamelink.profilers.clinicjs import record as record_clinicjs
+from flamelink.report import build_report, load_report, ReportError
 from flamelink.wsl import to_windows_path
 
 
@@ -34,6 +36,9 @@ def main():
     node_parser.add_argument("--duration", type=int, default=10, help="Duration of the profiling in seconds.")
     node_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
     node_parser.add_argument("target_command", nargs="+", metavar="-- COMMAND", help="Command to run, e.g. -- node app.js. Use -- to separate the command from the CLI arguments.")
+
+    report_parser = subparsers.add_parser("report", help="Pretty-print a report file.")
+    report_parser.add_argument("path", type=str, help="Path to the report file (JSON).")
 
     args = parser.parse_args()
 
@@ -96,6 +101,13 @@ def main():
         except Exception as e:
             print(f"Unexpected error during profiling: {e}")
             sys.exit(1)
+    elif args.command == "report":
+        try:
+            report = load_report(args.path)
+        except ReportError as e:
+            print(f"Error loading report: {e}")
+            sys.exit(1)
+        render_report(report, Console())
     else:
         parser.error(f"Unknown command: {args.command} {getattr(args, 'target', '')}".strip())
 
