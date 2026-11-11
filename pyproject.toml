@@ -24,3 +24,6 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "rfc3339-validator>=0.1.4",
 ]
+
+[tool.pytest.ini_options]
+markers = ["integration: runs real profilers and servers (slow, needs node/clinic or sudo)"]

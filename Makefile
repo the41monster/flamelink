@@ -1,4 +1,8 @@
 SHELL := /bin/bash
+.PHONY: run-python run-node profile-node \
+	load-python-50 load-python-100 load-python-200 \
+	load-node-50 load-node-100 load-node-200 \
+	test-pyspy test test-all
 run-python:
 	echo "Running Python demo..."
 	uvicorn demos.python.server:app --workers 1
@@ -31,3 +35,9 @@ load-node-200:
 
 test-pyspy:
 	uv run pytest tests/test_pyspy_integration.py -v
+
+test:
+	uv run pytest -m "not integration" -v
+
+test-all:
+	uv run pytest -v

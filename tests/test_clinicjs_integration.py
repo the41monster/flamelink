@@ -10,6 +10,7 @@ from flamelink.hotspot import parse_clinic_report, rank_clinic_hotspots
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_clinicjs_captures_load(tmp_path):
     output_path = tmp_path / "report.html"
 
