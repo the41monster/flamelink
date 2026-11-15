@@ -2,6 +2,9 @@ import httpx
 import asyncio
 import time
 
+from flamelink.profilers.errors import ProfilerError
+
+
 async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float], dict]:
     if rps <= 0:
         raise ValueError("RPS must be greater than 0.")
@@ -44,6 +47,22 @@ async def generate_load(url: str, rps: int, duration_s: int) -> tuple[list[float
         await asyncio.gather(*tasks)
     
     return response_times, error_dict
+
+
+async def wait_until_ready(url: str, timeout_s: float = 10) -> None:
+    async with httpx.AsyncClient(timeout=1.0) as client:
+        start_time = time.perf_counter()
+        while time.perf_counter() - start_time < timeout_s:
+            try:
+                await client.get(url)
+                return
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                pass
+            except httpx.ReadTimeout:
+                return
+            await asyncio.sleep(0.1)
+    raise ProfilerError(f"Target URL {url} did not become ready within {timeout_s} seconds.")
+
 
 def calculate_percentiles(times: list[float]) -> dict:
     if not times:
