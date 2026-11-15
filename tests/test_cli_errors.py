@@ -324,3 +324,156 @@ def test_profile_python_with_url_unparseable_profile_exits_nonzero(monkeypatch, 
     assert "Unexpected error" not in out
     assert svg_path.read_text(encoding="utf-8") == svg_without_root  # The profile is kept for a manual look
     assert not report_path.exists()
+
+
+# 10 samples: root -> (anonymous) -> {fib -> fib (recursive), [SHARED_LIB] -> syscall}.
+# Copied from test_reporters.py so test files don't import each other.
+CLINIC_HTML = """\
+<html><script>var data = {"merged":{
+  "value": 10, "onStackTop": {"base": 0}, "children": [
+    {"functionName": "(anonymous)", "fileName": "./server.js", "lineNumber": 7,
+     "value": 10, "onStackTop": {"base": 0}, "children": [
+      {"functionName": "fib", "fileName": "./utils.js", "lineNumber": 1,
+       "value": 7, "onStackTop": {"base": 2}, "children": [
+        {"functionName": "fib", "fileName": "./utils.js", "lineNumber": 1,
+         "value": 5, "onStackTop": {"base": 5}, "children": []}
+      ]},
+      {"functionName": "[SHARED_LIB]", "fileName": "/usr/bin/node", "lineNumber": null,
+       "value": 3, "onStackTop": {"base": 2}, "children": [
+        {"functionName": "syscall", "fileName": null, "lineNumber": null,
+         "value": 1, "onStackTop": {"base": 1}, "children": []}
+      ]}
+    ]}
+  ]
+}}</script></html>
+"""
+
+CLINIC_EXPECTED = [
+    {"fn": "fib",  "file": "./utils.js", "line": 1, "self_pct": 70.0, "total_pct": 70.0},
+    {"fn": "[SHARED_LIB]", "file": "/usr/bin/node", "line": None, "self_pct": 20.0, "total_pct": 30.0},
+    {"fn": "syscall", "file": None, "line": None, "self_pct": 10.0, "total_pct": 10.0},
+    {"fn": "(anonymous)", "file": "./server.js", "line": 7, "self_pct": 0.0, "total_pct": 100.0},
+]
+
+NODE_URL = "http://localhost:3000/fib/?n=25"
+
+
+def test_profile_node_with_url_writes_combined_report(monkeypatch, tmp_path):
+    # Fake clinic, the readiness check and the load, so this runs without node or a server
+    calls = {}
+
+    def fake_record_clinicjs(command, duration, output_path, mode, stop_event):
+        calls["record"] = (command, output_path, mode)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(CLINIC_HTML)
+        # Like the real event mode: keep "profiling" until the load is over
+        calls["stopped"] = stop_event.wait(timeout=2)
+
+    async def fake_wait_until_ready(url):
+        calls["ready"] = url
+
+    async def fake_generate_load(url, rps, duration_s):
+        calls["load"] = (url, rps, duration_s)
+        return [10.0, 20.0, 30.0], {}
+
+    monkeypatch.setattr(cli, "record_clinicjs", fake_record_clinicjs)
+    monkeypatch.setattr(cli, "wait_until_ready", fake_wait_until_ready)
+    monkeypatch.setattr(cli, "generate_load", fake_generate_load)
+
+    html_path = tmp_path / "flame.html"
+    report_path = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "node",
+                                      "--url", NODE_URL, "--rps", "7", "--duration", "3",
+                                      "--out", str(html_path), "--report", str(report_path),
+                                      "--", "node", "server.js"])
+
+    cli.main()  # Should return normally, no SystemExit
+
+    assert calls["record"] == (["node", "server.js"], str(html_path), "flame")
+    assert calls["ready"] == NODE_URL
+    assert calls["load"] == (NODE_URL, 7, 3)
+    assert calls["stopped"] is True  # clinic was told to stop when the load ended
+
+    report = load_report(str(report_path))  # Raises ReportError if it doesn't validate
+    assert report["target"] == NODE_URL
+    assert report["duration_s"] == 3
+    assert report["sampler"] == "clinic"
+    assert report["p50_ms"] == 20.0
+    assert report["hotspots"] == CLINIC_EXPECTED
+
+
+def test_profile_node_report_without_url_is_rejected(monkeypatch, capsys, tmp_path):
+    # The --url/--report pairing check is shared; this shows it now covers node too.
+    # Clinic is faked so a broken check fails fast instead of spawning a real node process.
+    started = []
+
+    def fake_record_clinicjs(**kwargs):
+        started.append(True)
+
+    monkeypatch.setattr(cli, "record_clinicjs", fake_record_clinicjs)
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "node",
+                                      "--out", str(tmp_path / "flame.html"), "--report", str(tmp_path / "r.json"),
+                                      "--", "node", "server.js"])
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 2
+    assert "--report requires --url" in capsys.readouterr().err
+    assert started == []
+
+
+def test_profile_node_url_with_doctor_mode_is_rejected(monkeypatch, capsys, tmp_path):
+    # Doctor's HTML has no flamegraph data, so the run would only fail at the parse step.
+    # It must be rejected before clinic starts. Everything is faked so a broken check
+    # fails fast instead of polling a real port.
+    started = []
+
+    def fake_record_clinicjs(**kwargs):
+        started.append(True)
+
+    async def fake_wait_until_ready(url):
+        pass
+
+    async def fake_generate_load(url, rps, duration_s):
+        return [], {}
+
+    monkeypatch.setattr(cli, "record_clinicjs", fake_record_clinicjs)
+    monkeypatch.setattr(cli, "wait_until_ready", fake_wait_until_ready)
+    monkeypatch.setattr(cli, "generate_load", fake_generate_load)
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "node", "--mode", "doctor",
+                                      "--url", NODE_URL, "--out", str(tmp_path / "doctor.html"),
+                                      "--report", str(tmp_path / "r.json"),
+                                      "--", "node", "server.js"])
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 2
+    assert "--mode doctor" in capsys.readouterr().err
+    assert started == []
+
+
+def test_profile_node_with_url_clinic_failure_exits_nonzero(monkeypatch, capsys, tmp_path):
+    # Clinic dies on startup: the server never comes up, and clinic's own error is what the user sees
+    def fake_record_clinicjs(**kwargs):
+        raise cli.ProfilerError("clinic exited early")
+
+    async def fake_wait_until_ready(url):
+        raise cli.ProfilerError("not ready")
+
+    async def fake_generate_load(url, rps, duration_s):
+        return [], {}
+
+    monkeypatch.setattr(cli, "record_clinicjs", fake_record_clinicjs)
+    monkeypatch.setattr(cli, "wait_until_ready", fake_wait_until_ready)
+    monkeypatch.setattr(cli, "generate_load", fake_generate_load)
+
+    report_path = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "node", "--url", NODE_URL,
+                                      "--out", str(tmp_path / "flame.html"), "--report", str(report_path),
+                                      "--", "node", "server.js"])
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 1
+    assert "Error during profiling: clinic exited early" in capsys.readouterr().out
+    assert not report_path.exists()

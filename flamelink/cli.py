@@ -7,7 +7,7 @@ from collections.abc import Coroutine
 from rich.console import Console
 
 from flamelink.display import render_report
-from flamelink.hotspot import pyspy_hotspots
+from flamelink.hotspot import clinic_hotspots, pyspy_hotspots
 from flamelink.load import generate_load, wait_until_ready
 from flamelink.profilers.errors import ProfilerError
 from flamelink.profilers.pyspy import record as record_pyspy, ensure_sudo
@@ -79,6 +79,9 @@ def main():
     node_parser.add_argument("--duration", type=int, default=10, help="Duration of the profiling in seconds.")
     node_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
     node_parser.add_argument("target_command", nargs="+", metavar="-- COMMAND", help="Command to run, e.g. -- node app.js. Use -- to separate the command from the CLI arguments.")
+    node_parser.add_argument("--url", type=str, help="Send load to this URL while profiling.")
+    node_parser.add_argument("--rps", type=int, default=10, help="Requests per second when --url is specified.")
+    node_parser.add_argument("--report", type=str, help="Write a combined latency + hotspot report to this file when --url is specified.")
 
     report_parser = subparsers.add_parser("report", help="Show a report file as a table or JSON.")
     report_parser.add_argument("path", type=str, help="Path to the report file (JSON).")
@@ -86,11 +89,13 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "profile" and args.target == "python":
+    if args.command == "profile":
         if args.report and not args.url:
             parser.error("--report requires --url to be specified.")
         if args.url and not args.report:
             parser.error("--url requires --report to be specified.")
+        if args.target == "node" and args.url and args.mode == "doctor":
+            parser.error("--url is not supported with --mode doctor for Node.js profiling.")
 
     if args.command == "load":
         url = args.url
@@ -142,10 +147,13 @@ def main():
         out = args.out
         target_command = args.target_command
 
-        print(f"Profiling Node.js process for {duration} seconds...")
         try:
-            record_clinicjs(command=target_command, duration=duration, output_path=out, mode=mode)
-            print(f"Profiling completed. Data saved to {out}")
+            if args.url is None:
+                print(f"Profiling Node.js process for {duration} seconds...")
+                record_clinicjs(command=target_command, duration=duration, output_path=out, mode=mode)
+                print(f"Profiling completed. Data saved to {out}")
+            else:
+                profile_with_load(record_clinic_with_load(target_command, out, args.url, args.rps, duration), clinic_hotspots, sampler="clinic", args=args)
             windows_path = to_windows_path(out)
             if windows_path is not None:
                 print(f"Windows path: {windows_path}")
