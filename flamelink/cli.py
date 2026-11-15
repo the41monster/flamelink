@@ -2,11 +2,12 @@ import argparse
 import asyncio
 import json
 import sys
+import threading
 from rich.console import Console
 
 from flamelink.display import render_report
 from flamelink.hotspot import pyspy_hotspots
-from flamelink.load import generate_load
+from flamelink.load import generate_load, wait_until_ready
 from flamelink.profilers.errors import ProfilerError
 from flamelink.profilers.pyspy import record as record_pyspy, ensure_sudo
 from flamelink.profilers.clinicjs import record as record_clinicjs
@@ -19,6 +20,18 @@ async def record_with_load(record_fn, url: str, rps: int, duration_s: int) -> tu
         asyncio.to_thread(record_fn),
         generate_load(url, rps, duration_s)
     )
+    return times, errors
+
+
+async def record_clinic_with_load(command: list[str], out: str, url: str, rps: int, duration_s: int) -> tuple[list[float], dict]:
+    stop_event = threading.Event()
+    record_task = asyncio.create_task(asyncio.to_thread(record_clinicjs, command=command, duration=duration_s, output_path=out, mode="flame", stop_event=stop_event))
+    try:
+        await wait_until_ready(url)
+        times, errors = await generate_load(url, rps, duration_s)
+    finally:
+        stop_event.set()
+        await record_task
     return times, errors
 
 
