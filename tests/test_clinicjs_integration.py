@@ -10,6 +10,7 @@ from flamelink.hotspot import parse_clinic_report, rank_clinic_hotspots
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_clinicjs_captures_load(tmp_path):
     output_path = tmp_path / "report.html"
 
@@ -57,7 +58,7 @@ async def test_clinicjs_captures_load(tmp_path):
     ranked_hotspots = rank_clinic_hotspots(clinic_hotspots)
     contains = False
     for hotspot in ranked_hotspots:
-        if "fib" in hotspot["name"] and hotspot["category"] == "app":
+        if hotspot["name"] == "fib" and hotspot["file"] == "./utils.js":
             contains = True
             break
     assert contains, "Ranked hotspots do not contain the expected 'fib' function"

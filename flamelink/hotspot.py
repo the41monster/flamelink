@@ -4,6 +4,13 @@ import xml.etree.ElementTree as ET
 
 from collections import defaultdict, Counter
 
+# inferno's flamegraph attributes (fg:x, fg:w) live in this namespace
+FG_NS = '{http://github.com/jonhoo/inferno}'
+FG_X = f"{FG_NS}x"
+FG_W = f"{FG_NS}w"
+TITLE_RE = re.compile(r'^(?P<fn>.*?)(?: \((?P<file>.*):(?P<line>\d+)\))? \((?P<samples>[\d,]+) samples?, [\d.]+%\)$')
+
+
 def parse_frames(svg_path: str) -> list[dict]:
     tree = ET.parse(svg_path)
     root = tree.getroot()
@@ -22,14 +29,27 @@ def parse_frames(svg_path: str) -> list[dict]:
 
         if title_el is None or rect_el is None or not title_el.text:
             continue
+        fg_w = rect_el.get(FG_W)
+        if fg_w is None:
+            continue
 
-        name = title_el.text.split('(', 1)[0].strip()
-        x = float(rect_el.get('x', '0').rstrip('%'))
-        width = float(rect_el.get('width', '0').rstrip('%'))
+        m = TITLE_RE.match(title_el.text)
+        if m is None:
+            raise ValueError(f"Unrecognized py-spy frame title: {title_el.text!r}")
+        name = m.group('fn')
+        file = m.group('file')
+        line = int(m.group('line')) if m.group('line') else None
+        fg_x = rect_el.get(FG_X)
+        if fg_x is None:
+            raise ValueError(f"Frame {name!r} has fg:w but no fg:x; the SVG is malformed")
+        x = int(fg_x)
+        width = int(fg_w)
         y = float(rect_el.get('y', '0').rstrip('%'))
 
         frames.append({
             'name': name,
+            'file': file,
+            'line': line,
             'x': x,
             'width': width,
             'y': y
@@ -64,17 +84,75 @@ def rank_hotspots(frames: list[dict]) -> list[dict]:
                 else:
                     break
             frame['children'] = child_frames
+        if last_index != len(next_level_frames):
+            orphan = next_level_frames[last_index]
+            raise ValueError(f"Frame {orphan['name']!r} at x={orphan['x']} has no parent frame")
+
+    if not depth_ordering:
+        return []
 
     self_times = Counter()
-    for frame in frames:
-        self_time = frame['width']
-        for child in frame.get('children', []):
-            self_time -= child['width']
-        self_times[frame['name']] += self_time
+    total_times = Counter()
+
+    roots = depth_ordering[0][1]
+    stack = [(root, frozenset()) for root in roots]
+
+    while stack:
+        frame, keys_above = stack.pop()
+        key = (frame['name'], frame['file'], frame['line'])
+        children = frame.get('children', [])
+
+        self_times[key] += frame['width'] - sum(child['width'] for child in children)
+
+        if key not in keys_above:
+            total_times[key] += frame['width']
+
+        child_keys_above = keys_above | {key}
+        for child in children:
+            stack.append((child, child_keys_above))
 
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
-    sorted_frames = [{'name': name, 'self_time': self_time} for name, self_time in sorted_frames]
+    sorted_frames = [
+        {
+            'name': name,
+            'file': file,
+            'line': line,
+            'self_time': self_time,
+            'total_time': total_times[(name, file, line)]
+        }
+        for (name, file, line), self_time in sorted_frames
+    ]
     return sorted_frames
+
+
+def pyspy_hotspots(svg_path: str) -> list[dict]:
+    frames = parse_frames(svg_path)
+    rows = rank_hotspots(frames)
+    root_row = next(
+        (row for row in rows if row['name'] == 'all' and row['file'] is None),
+        None,
+    )
+
+    if root_row is None:
+        raise ValueError(f"{svg_path!r} does not contain a root 'all' frame; can't compute percentages")
+
+    samples = root_row['total_time']
+    if samples == 0:
+        raise ValueError(f"{svg_path!r} has 0 samples in its 'all' root frame")
+
+    hotspot_rows = []
+    for row in rows:
+        if row is root_row:
+            continue
+        hotspot_rows.append({
+            'fn': row['name'],
+            'file': row['file'],
+            'line': row['line'],
+            'self_pct': round(100 * row['self_time'] / samples, 2),
+            'total_pct': round(100 * row['total_time'] / samples, 2)
+        })
+
+    return hotspot_rows
 
 
 def read_clinic_report(html_path: str) -> str:
@@ -121,12 +199,45 @@ def parse_clinic_report(html_path: str) -> dict:
 
 def rank_clinic_hotspots(root: dict) -> list[dict]:
     self_times = Counter()
-    stack = [root]
+    total_times = Counter()
+    # The root is a container, not a function, so the walk starts at its children
+    stack = [(child, frozenset()) for child in root.get("children", [])]
     while stack:
-        node = stack.pop()
-        self_times[(node["functionName"], node["fileName"], node["lineNumber"], node["category"], node["type"])] += node["onStackTop"]["base"]
-        stack.extend(node.get("children", []))
+        node, keys_above = stack.pop()
+        key = (node["functionName"], node["fileName"], node["lineNumber"])
+        children = node.get("children", [])
+        self_times[key] += node["onStackTop"]["base"]
+        if key not in keys_above:
+            total_times[key] += node["value"]
+        stack.extend([(child, keys_above | {key}) for child in children])
     
     sorted_frames = sorted(self_times.items(), key=lambda item: item[1], reverse=True)
-    sorted_frames = [{'name': name, 'file': file, 'line': line, 'category': category, 'type': type, 'self_time': self_time} for (name, file, line, category, type), self_time in sorted_frames]
+    sorted_frames = [
+        {
+            'name': name,
+            'file': file,
+            'line': line,
+            'self_time': self_time,
+            'total_time': total_times[(name, file, line)]
+        } for (name, file, line), self_time in sorted_frames]
     return sorted_frames
+
+
+def clinic_hotspots(html_path: str) -> list[dict]:
+    root = parse_clinic_report(html_path)
+    rows = rank_clinic_hotspots(root)
+    samples = root["value"]
+    if samples == 0:
+        raise ValueError(f"{html_path!r} has 0 samples in its root frame")
+
+    hotspot_rows = []
+    for row in rows:
+        hotspot_rows.append({
+            'fn': row['name'],
+            'file': row['file'],
+            'line': row['line'],
+            'self_pct': round(100 * row['self_time'] / samples, 2),
+            'total_pct': round(100 * row['total_time'] / samples, 2),
+        })
+
+    return hotspot_rows

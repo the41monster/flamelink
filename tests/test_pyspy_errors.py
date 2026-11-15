@@ -2,7 +2,7 @@ import pytest
 import shutil
 import subprocess
 
-from flamelink.profilers.pyspy import record
+from flamelink.profilers.pyspy import record, ensure_sudo
 from flamelink.profilers.errors import ProfilerError
 
 
@@ -71,3 +71,48 @@ def test_success_with_permission_text_in_stderr(monkeypatch):
 
     output_path = record(pid=1234, duration=1, output_path="output.svg")
     assert output_path == "output.svg"
+
+
+def test_ensure_sudo_not_installed(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    with pytest.raises(ProfilerError, match="sudo"):
+        ensure_sudo()
+
+
+def test_ensure_sudo_runs_sudo_v(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ensure_sudo()  # Should not raise
+    assert len(calls) == 1
+    cmd, kwargs = calls[0]
+    assert cmd == ["/usr/bin/sudo", "-v"]
+    assert kwargs.get("check") is True
+    # sudo's own messages ("3 incorrect password attempts", "a terminal is required") must reach the user
+    assert "capture_output" not in kwargs
+
+
+def test_ensure_sudo_auth_failure(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(ProfilerError, match="authentication failed"):
+        ensure_sudo()
+
+
+def test_ensure_sudo_ctrl_c(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(ProfilerError, match="Cancelled"):
+        ensure_sudo()

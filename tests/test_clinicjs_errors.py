@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from flamelink.profilers.clinicjs import record
+from flamelink.profilers.clinicjs import POLL_INTERVAL_S, record
 from flamelink.profilers.errors import ProfilerError
 
 
@@ -175,3 +175,79 @@ def test_doctor_cleans_trace_log_on_failure(monkeypatch, tmp_path):
     trace_file = tmp_path / "node_trace.1.log"
 
     assert not trace_file.exists(), "Trace log should be cleaned up even after failed doctor run"
+
+
+# --- stop_event mode ---
+
+class FakeEvent:
+    """Reports set from its `set_on`-th is_set() call on, so a test controls exactly when load "ends"."""
+    def __init__(self, set_on):
+        self.checks = 0
+        self.set_on = set_on
+
+    def is_set(self):
+        self.checks += 1
+        return self.checks >= self.set_on
+
+
+def run_with_event(monkeypatch, tmp_path, event, **popen_kwargs):
+    """Run record() in event mode with a FakePopen. Returns (sent signals, communicate timeouts)."""
+    signals = []
+    timeouts_seen = []
+    FakePopen = make_fake_popen(**popen_kwargs)
+    original_communicate = FakePopen.communicate
+
+    def recording_communicate(self, timeout=None):
+        timeouts_seen.append(timeout)
+        return original_communicate(self, timeout)
+
+    monkeypatch.setattr(FakePopen, "communicate", recording_communicate)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append(sig))
+    monkeypatch.chdir(tmp_path)
+
+    record(command=["node", "app.js"], duration=1, output_path=str(tmp_path / "output.html"), stop_event=event)
+    return signals, timeouts_seen
+
+
+def test_event_already_set_sends_sigint_once(monkeypatch, tmp_path):
+    # First poll times out, the event is already set, so clinic gets SIGINT and exits during the grace period
+    signals, timeouts_seen = run_with_event(monkeypatch, tmp_path, FakeEvent(set_on=1), html=VALID_HTML, timeouts=1)
+
+    assert signals == [signal.SIGINT]
+    assert timeouts_seen == [POLL_INTERVAL_S, 30]
+    assert (tmp_path / "output.html").exists()
+
+
+def test_event_set_after_several_polls(monkeypatch, tmp_path):
+    # Load "ends" on the 3rd check: 3 polls, then SIGINT, then the grace-period communicate returns
+    signals, timeouts_seen = run_with_event(monkeypatch, tmp_path, FakeEvent(set_on=3), html=VALID_HTML, timeouts=3)
+
+    assert signals == [signal.SIGINT]
+    assert timeouts_seen == [POLL_INTERVAL_S] * 3 + [30]
+    assert (tmp_path / "output.html").exists()
+
+
+def test_event_mode_clinic_exits_on_its_own(monkeypatch, tmp_path):
+    # The event is never set, but clinic finishes after 3 polls: no signal is sent
+    signals, timeouts_seen = run_with_event(monkeypatch, tmp_path, FakeEvent(set_on=99), html=VALID_HTML, timeouts=3)
+
+    assert signals == []
+    assert timeouts_seen == [POLL_INTERVAL_S] * 4
+    assert (tmp_path / "output.html").exists()
+
+
+def test_event_mode_target_crash_is_noticed_while_polling(monkeypatch, tmp_path):
+    # The target dies before the load ends: reported as "exited early", without waiting for the event
+    with pytest.raises(ProfilerError, match="exited early"):
+        run_with_event(monkeypatch, tmp_path, FakeEvent(set_on=99),
+                       stderr="Target subprocess error, code: 1", timeouts=2)
+
+
+def test_event_mode_escalates_to_sigkill(monkeypatch, tmp_path):
+    # Event set, and clinic also ignores SIGINT for the whole grace period: same escalation as duration mode
+    signals, timeouts_seen = run_with_event(monkeypatch, tmp_path, FakeEvent(set_on=1), html=VALID_HTML, timeouts=2)
+
+    assert signals == [signal.SIGINT, signal.SIGKILL]
+    assert timeouts_seen == [POLL_INTERVAL_S, 30, None]

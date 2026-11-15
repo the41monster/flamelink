@@ -8,8 +8,9 @@ import re
 
 from flamelink.profilers.errors import ProfilerError
 
+POLL_INTERVAL_S = 0.2
 
-def record(command, duration, output_path, mode="flame"):
+def record(command, duration, output_path, mode="flame", stop_event=None):
     clinicjs_path = shutil.which("clinic")
     if clinicjs_path is None:
         raise ProfilerError(
@@ -47,7 +48,16 @@ def record(command, duration, output_path, mode="flame"):
             killed = False
             stdout = stderr = ""
             try:
-                stdout, stderr = proc.communicate(timeout=duration)
+                if stop_event is None:
+                    stdout, stderr = proc.communicate(timeout=duration)
+                else:
+                    while True:
+                        try:
+                            stdout, stderr = proc.communicate(timeout=POLL_INTERVAL_S)
+                            break
+                        except subprocess.TimeoutExpired:
+                            if stop_event.is_set():
+                                raise
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(proc.pid, signal.SIGINT)

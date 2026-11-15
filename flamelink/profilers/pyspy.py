@@ -17,8 +17,32 @@ _NON_PYTHON_RE = re.compile(
 def is_permission_denied(result_stderr: str) -> bool:
     return bool(_PERM_DENIED_RE.search(result_stderr))
 
+
 def is_non_python_process(result_stderr: str) -> bool:
     return bool(_NON_PYTHON_RE.search(result_stderr))
+
+
+def _find_sudo() -> str:
+    sudo_path = shutil.which("sudo")
+    if sudo_path is None:
+        raise ProfilerError(
+            "sudo is not installed or not found in PATH. "
+            "It is required to attach to processes via ptrace."
+        )
+    return sudo_path
+
+
+def ensure_sudo() -> None:
+    sudo_path = _find_sudo()
+    try:
+        subprocess.run([sudo_path, "-v"], check=True)
+    except subprocess.CalledProcessError as e:
+        raise ProfilerError(
+            "sudo authentication failed. py-spy needs sudo to attach to the process."
+        ) from e
+    except KeyboardInterrupt as e:
+        raise ProfilerError("Cancelled at the sudo password prompt.") from e
+
 
 def record(pid: int, duration: int, output_path: str) -> str:
     py_spy_path = shutil.which("py-spy")
@@ -27,15 +51,11 @@ def record(pid: int, duration: int, output_path: str) -> str:
             "py-spy is not installed or not found in PATH. "
             "Please install py-spy and ensure it is available in your PATH."
         )
-    sudo_path = shutil.which("sudo")
-    if sudo_path is None:
-        raise ProfilerError(
-            "sudo is not installed or not found in PATH. "
-            "It is required to attach to processes via ptrace."
-        )
-    
+    sudo_path = _find_sudo()
+
     cmd = [
         sudo_path, py_spy_path, "record",
+        "--function",
         "--output", output_path,
         "--pid", str(pid),
         "--duration", str(duration),

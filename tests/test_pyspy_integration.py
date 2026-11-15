@@ -53,6 +53,7 @@ def fastapi_server():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_pyspy_captures_load(fastapi_server, tmp_path):
     pid = fastapi_server.pid
     url = URL
