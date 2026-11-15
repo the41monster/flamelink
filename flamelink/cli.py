@@ -28,7 +28,13 @@ async def record_clinic_with_load(command: list[str], out: str, url: str, rps: i
     stop_event = threading.Event()
     record_task = asyncio.create_task(asyncio.to_thread(record_clinicjs, command=command, duration=duration_s, output_path=out, mode="flame", stop_event=stop_event))
     try:
-        await wait_until_ready(url)
+        ready_task = asyncio.create_task(wait_until_ready(url))
+        done, _ = await asyncio.wait({ready_task, record_task}, return_when=asyncio.FIRST_COMPLETED)
+        if record_task in done:
+            ready_task.cancel()
+            await record_task
+            raise ProfilerError("clinic exited before the server was ready.")
+        await ready_task
         times, errors = await generate_load(url, rps, duration_s)
     finally:
         stop_event.set()

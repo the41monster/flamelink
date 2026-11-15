@@ -1,4 +1,6 @@
+import asyncio
 import threading
+import time
 
 import pytest
 
@@ -101,3 +103,51 @@ async def test_clinic_error_wins_over_not_ready(monkeypatch):
     with pytest.raises(ProfilerError, match="exited early"):
         await cli.record_clinic_with_load(COMMAND, OUT, URL, rps=10, duration_s=5)
     assert load_started == []   # the server never became ready, so no load
+
+
+@pytest.mark.asyncio
+async def test_clinic_failure_is_reported_without_waiting_for_readiness(monkeypatch):
+    # Clinic fails at once (e.g. not on PATH), but nothing will ever listen on the URL.
+    # The error must come out straight away, not after the readiness timeout.
+    def crashing_clinic(**kwargs):
+        raise ProfilerError("clinic not installed")
+
+    async def slow_ready(url):
+        await asyncio.sleep(5)  # Stands in for polling a port that never opens
+
+    async def fake_load(url, rps, duration_s):
+        return [], {}
+
+    monkeypatch.setattr(cli, "record_clinicjs", crashing_clinic)
+    monkeypatch.setattr(cli, "wait_until_ready", slow_ready)
+    monkeypatch.setattr(cli, "generate_load", fake_load)
+
+    start = time.perf_counter()
+    with pytest.raises(ProfilerError, match="clinic not installed"):
+        await cli.record_clinic_with_load(COMMAND, OUT, URL, rps=10, duration_s=5)
+    assert time.perf_counter() - start < 1
+
+
+@pytest.mark.asyncio
+async def test_clinic_exiting_cleanly_before_ready_is_an_error(monkeypatch):
+    # e.g. `-- node -e 1`: clinic finishes without an error, but no server ever came up,
+    # so there is nothing to send load to
+    load_started = []
+
+    def quick_clinic(**kwargs):
+        return None
+
+    async def slow_ready(url):
+        await asyncio.sleep(5)
+
+    async def fake_load(url, rps, duration_s):
+        load_started.append(True)
+        return [], {}
+
+    monkeypatch.setattr(cli, "record_clinicjs", quick_clinic)
+    monkeypatch.setattr(cli, "wait_until_ready", slow_ready)
+    monkeypatch.setattr(cli, "generate_load", fake_load)
+
+    with pytest.raises(ProfilerError, match="exited before the server was ready"):
+        await cli.record_clinic_with_load(COMMAND, OUT, URL, rps=10, duration_s=5)
+    assert load_started == []
