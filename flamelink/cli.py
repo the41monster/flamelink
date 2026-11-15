@@ -5,6 +5,7 @@ import sys
 import threading
 from collections.abc import Coroutine
 from rich.console import Console
+from jsonschema import ValidationError
 
 from flamelink.display import render_report
 from flamelink.hotspot import clinic_hotspots, pyspy_hotspots
@@ -12,7 +13,7 @@ from flamelink.load import generate_load, wait_until_ready
 from flamelink.profilers.errors import ProfilerError
 from flamelink.profilers.pyspy import record as record_pyspy, ensure_sudo
 from flamelink.profilers.clinicjs import record as record_clinicjs
-from flamelink.report import build_report, load_report, ReportError
+from flamelink.report import build_report, load_report, ReportError, SCHEMA_VALIDATOR
 from flamelink.wsl import to_windows_path
 
 
@@ -54,6 +55,11 @@ def profile_with_load(run: Coroutine[None, None, tuple[list[float], dict]], pars
         print(f"Profile saved to {args.out}, but hotspots could not be extracted from it: {e}")
         sys.exit(1)
     report = build_report(args.url, args.duration, times, sampler=sampler, hotspots=hotspots)
+    try:
+        SCHEMA_VALIDATOR.validate(report)
+    except ValidationError as e:
+        print(f"Profile saved to {args.out}, but the report failed schema validation: {e.message} (at {e.json_path})")
+        sys.exit(1)
     with open(args.report, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
     print(f"Report saved to {args.report}")

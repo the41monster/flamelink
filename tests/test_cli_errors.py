@@ -536,3 +536,37 @@ def test_profile_node_zero_duration_is_rejected_before_clinic(monkeypatch, capsy
     assert e.value.code == 2
     assert "--duration" in capsys.readouterr().err
     assert started == []  # clinic never launched
+
+
+def test_profile_python_with_url_invalid_report_is_not_written(monkeypatch, capsys, tmp_path):
+    # A parser bug that yields a row the schema rejects (line must be >= 1) must fail
+    # at write time, not later when `flamelink report` reads the file
+    def fake_record_pyspy(pid, duration, output_path):
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(PYSPY_SVG)
+
+    async def fake_generate_load(url, rps, duration_s):
+        return [10.0, 20.0, 30.0], {}
+
+    def bad_hotspots(path):
+        return [{"fn": "fib", "file": "app.py", "line": 0, "self_pct": 100.0, "total_pct": 100.0}]
+
+    monkeypatch.setattr(cli, "ensure_sudo", lambda: None)
+    monkeypatch.setattr(cli, "record_pyspy", fake_record_pyspy)
+    monkeypatch.setattr(cli, "generate_load", fake_generate_load)
+    monkeypatch.setattr(cli, "pyspy_hotspots", bad_hotspots)
+
+    svg_path = tmp_path / "profile.svg"
+    report_path = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "python", "--pid", "1234", "--url", URL,
+                                      "--out", str(svg_path), "--report", str(report_path)])
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 1
+    out = capsys.readouterr().out
+    assert "the report failed schema validation" in out
+    assert "$.hotspots[0].line" in out  # points at the bad field
+    assert "Unexpected error" not in out
+    assert svg_path.read_text(encoding="utf-8") == PYSPY_SVG  # The profile is kept
+    assert not report_path.exists()
