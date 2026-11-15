@@ -477,3 +477,62 @@ def test_profile_node_with_url_clinic_failure_exits_nonzero(monkeypatch, capsys,
     assert e.value.code == 1
     assert "Error during profiling: clinic exited early" in capsys.readouterr().out
     assert not report_path.exists()
+
+
+def test_profile_python_zero_rps_is_rejected_before_sudo(monkeypatch, capsys, tmp_path):
+    # A bad --rps must stop at parse time. Before, it was only caught inside the load
+    # generator, after py-spy had started, so the user waited out the full --duration.
+    # Everything is faked so a broken check fails fast instead of attaching py-spy.
+    started = []
+
+    def fake_ensure_sudo():
+        started.append("sudo")
+
+    def fake_record_pyspy(pid, duration, output_path):
+        started.append("record")
+
+    async def fake_generate_load(url, rps, duration_s):
+        started.append("load")
+        return [], {}
+
+    monkeypatch.setattr(cli, "ensure_sudo", fake_ensure_sudo)
+    monkeypatch.setattr(cli, "record_pyspy", fake_record_pyspy)
+    monkeypatch.setattr(cli, "generate_load", fake_generate_load)
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "python", "--pid", "1234", "--url", URL,
+                                      "--rps", "0", "--out", str(tmp_path / "profile.svg"),
+                                      "--report", str(tmp_path / "report.json")])
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 2  # argparse's exit code for usage errors
+    assert "--rps" in capsys.readouterr().err
+    assert started == []  # No sudo prompt, no profiler, no load
+
+
+def test_profile_node_zero_duration_is_rejected_before_clinic(monkeypatch, capsys, tmp_path):
+    # Before, a bad value stopped clinic right after it started, and clinic's own error
+    # then replaced the real one. Everything is faked so a broken check fails fast.
+    started = []
+
+    def fake_record_clinicjs(**kwargs):
+        started.append("record")
+
+    async def fake_wait_until_ready(url):
+        pass
+
+    async def fake_generate_load(url, rps, duration_s):
+        started.append("load")
+        return [], {}
+
+    monkeypatch.setattr(cli, "record_clinicjs", fake_record_clinicjs)
+    monkeypatch.setattr(cli, "wait_until_ready", fake_wait_until_ready)
+    monkeypatch.setattr(cli, "generate_load", fake_generate_load)
+    monkeypatch.setattr(sys, "argv", ["flamelink", "profile", "node", "--url", NODE_URL, "--duration", "0",
+                                      "--out", str(tmp_path / "flame.html"), "--report", str(tmp_path / "report.json"),
+                                      "--", "node", "server.js"])
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 2
+    assert "--duration" in capsys.readouterr().err
+    assert started == []  # clinic never launched

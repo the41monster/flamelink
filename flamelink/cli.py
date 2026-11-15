@@ -53,14 +53,21 @@ def profile_with_load(run: Coroutine[None, None, tuple[list[float], dict]], pars
     print(f"Report saved to {args.report}")
 
 
+def positive_int(value: str) -> int:
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"must be greater than 0, got {value}")
+    return number
+
+
 def main():
     parser = argparse.ArgumentParser(prog="flamelink", description="Flamelink CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     load_parser = subparsers.add_parser("load", help="Generate load on a target URL.")
     load_parser.add_argument("--url", type=str, required=True, help="Target URL to send requests to.")
-    load_parser.add_argument("--rps", type=int, default=10, help="Requests per second.")
-    load_parser.add_argument("--duration", type=int, default=10, help="Duration of the load test in seconds.")
+    load_parser.add_argument("--rps", type=positive_int, default=10, help="Requests per second.")
+    load_parser.add_argument("--duration", type=positive_int, default=10, help="Duration of the load test in seconds.")
     load_parser.add_argument("--output", type=str, help="Output file to save the report.")
 
     profile_parser = subparsers.add_parser("profile", help="Profile a Python process using py-spy.")
@@ -68,19 +75,19 @@ def main():
 
     python_parser = profile_subparsers.add_parser("python", help="Profile a running Python process.")
     python_parser.add_argument("--pid", type=int, required=True, help="PID of the Python process to profile.")
-    python_parser.add_argument("--duration", type=int, default=10, help="Duration of the profiling in seconds.")
+    python_parser.add_argument("--duration", type=positive_int, default=10, help="Duration of the profiling in seconds.")
     python_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
     python_parser.add_argument("--url", type=str, help="Send load to this URL while profiling.")
-    python_parser.add_argument("--rps", type=int, default=10, help="Requests per second when --url is specified.")
+    python_parser.add_argument("--rps", type=positive_int, default=10, help="Requests per second when --url is specified.")
     python_parser.add_argument("--report", type=str, help="Write a combined latency + hotspot report to this file when --url is specified.")
 
     node_parser = profile_subparsers.add_parser("node", help="Profile a Node.js process.")
     node_parser.add_argument("--mode", type=str, choices=["flame", "doctor"], default="flame", help="Profiling mode (default: flame).")
-    node_parser.add_argument("--duration", type=int, default=10, help="Duration of the profiling in seconds.")
+    node_parser.add_argument("--duration", type=positive_int, default=10, help="Duration of the profiling in seconds.")
     node_parser.add_argument("--out", type=str, required=True, help="Output file to save the profiling data.")
     node_parser.add_argument("target_command", nargs="+", metavar="-- COMMAND", help="Command to run, e.g. -- node app.js. Use -- to separate the command from the CLI arguments.")
     node_parser.add_argument("--url", type=str, help="Send load to this URL while profiling.")
-    node_parser.add_argument("--rps", type=int, default=10, help="Requests per second when --url is specified.")
+    node_parser.add_argument("--rps", type=positive_int, default=10, help="Requests per second when --url is specified.")
     node_parser.add_argument("--report", type=str, help="Write a combined latency + hotspot report to this file when --url is specified.")
 
     report_parser = subparsers.add_parser("report", help="Show a report file as a table or JSON.")
