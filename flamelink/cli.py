@@ -3,6 +3,7 @@ import asyncio
 import json
 import sys
 import threading
+from collections.abc import Coroutine
 from rich.console import Console
 
 from flamelink.display import render_report
@@ -35,9 +36,9 @@ async def record_clinic_with_load(command: list[str], out: str, url: str, rps: i
     return times, errors
 
 
-def profile_with_load(record_fn, parse_hotspots, sampler: str, args) -> None:
+def profile_with_load(run: Coroutine[None, None, tuple[list[float], dict]], parse_hotspots, sampler: str, args) -> None:
     print(f"Profiling for {args.duration} seconds while sending {args.rps} RPS to {args.url}...")
-    times, errors = asyncio.run(record_with_load(record_fn, args.url, args.rps, args.duration))
+    times, errors = asyncio.run(run)
     print(f"Profiling completed. Data saved to {args.out}")
     print(f"Errors: {errors}")
 
@@ -125,7 +126,7 @@ def main():
                 print(f"Profiling completed. Data saved to {out}")
             else:
                 ensure_sudo()
-                profile_with_load(lambda: record_pyspy(pid, duration, out), pyspy_hotspots, "py-spy", args)
+                profile_with_load(record_with_load(lambda: record_pyspy(pid, duration, out), args.url, args.rps, duration), pyspy_hotspots, sampler="py-spy", args=args)
             windows_path = to_windows_path(out)
             if windows_path is not None:
                 print(f"Windows path: {windows_path}")
